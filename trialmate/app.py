@@ -1,10 +1,14 @@
 """Wiring: database, model, trial data, channels and background workers."""
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 from . import agent, outbox, seed
@@ -30,7 +34,7 @@ def make_llm(settings: Settings) -> Any:
             model_fallbacks=[settings.chalk_model.split("/", 1)[1] if "/" in settings.chalk_model
                              else f"anthropic/{settings.chalk_model}"])
     if settings.llm_mode == "anthropic":
-        return AnthropicLLM(settings.anthropic_key, settings.model)
+        return AnthropicLLM(settings.anthropic_key, settings.model, discover_models=True)
     return MockLLM(settings.tz)
 
 
@@ -56,6 +60,32 @@ class App:
     def builder_engine(self) -> str:
         from .study_builder import droid_available
         return "droid" if droid_available() else "fallback"
+
+    def droid_missing(self) -> list[str]:
+        from .study_builder import droid_missing
+        return droid_missing()
+
+    def save_status(self) -> None:
+        """Write data/status.json so problems can be diagnosed without opening the dashboard."""
+        if str(self.settings.db_path) == ":memory:":
+            return
+        try:
+            path = Path(self.settings.db_path).parent / "status.json"
+            snapshot = {
+                "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "llm": {"mode": self.settings.llm_mode, "provider": getattr(self.llm, "name", ""),
+                        "model": getattr(self.llm, "model", ""), **self.status.get("llm", {})},
+                "photon": {"enabled": "photon" in self.channels, **self.status.get("photon", {}),
+                           "probe": self.status.get("photon_probe")},
+                "droid": {"engine": self.builder_engine(), "missing": self.droid_missing()},
+                "outbox_failed": [dict(r) for r in self.db.all(
+                    "SELECT id, kind, attempts, last_error FROM outbox WHERE status='failed' ORDER BY id DESC LIMIT 5")],
+            }
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(snapshot, indent=2, default=str), encoding="utf-8")
+            os.replace(tmp, path)
+        except Exception:
+            pass
 
     def patient_lock(self, patient_id: int) -> threading.Lock:
         with self._locks_guard:
@@ -83,6 +113,7 @@ class App:
             self.pool.submit(self._process_safe, row["id"])  # finish work interrupted by a restart
         self._spawn("outbox", self._outbox_loop)
         self._spawn("scheduler", self._scheduler_loop)
+        self.save_status()
         if "photon" in self.channels:
             poller = PhotonPoller(self, self.on_channel_message)
             poller.start()
@@ -120,6 +151,7 @@ class App:
                 self.scheduler_tick()
             except Exception as e:
                 self.db.audit(None, "scheduler:crash", f"{type(e).__name__}: {e}")
+            self.save_status()
             self._stop.wait(10)
 
     def stop(self) -> None:

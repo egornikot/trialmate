@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import socket
 import sys
 import tempfile
@@ -76,7 +75,14 @@ def run(settings: Settings, droid: bool = True) -> int:
             hint = ""
             if settings.llm_mode == "chalk":
                 hint = (" | Chalk: for the HackHarvard key use CHALK_ENV_ID=clkdcdaf84e and CHALK_MODEL=openai/gpt-6.1-sol. "
-                        "For your own environment, add a provider connection under Agents > Model Gateway > Routing.")
+                        "For your own environment, add a provider connection under Agents > Model Gateway > Routing. "
+                        "To use a Claude key instead, set LLM_MODE=anthropic in .env.")
+            elif settings.llm_mode == "anthropic":
+                low = str(e).lower()
+                if "credit balance" in low or "billing" in low:
+                    hint = " | Claude: add credits under Settings > Billing on platform.claude.com, then retry."
+                elif " 401:" in low or "authentication" in low or "invalid x-api-key" in low:
+                    hint = " | Claude: the ANTHROPIC_API_KEY in .env is wrong or incomplete. Copy it again (no spaces)."
             raise RuntimeError(f"{e}{hint}")
         text = " ".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text").strip()
         if not text and not any(b.get("type") == "tool_use" for b in resp.get("content", [])):
@@ -109,19 +115,20 @@ def run(settings: Settings, droid: bool = True) -> int:
     check("Photon", photon)
 
     def droid_setup() -> str:
+        from .study_builder import find_droid_cli
         parts = []
-        cli = shutil.which("droid")
-        parts.append("droid CLI found" if cli else "droid CLI missing (PowerShell: irm https://app.factory.ai/cli/windows | iex)")
+        cli = find_droid_cli()
+        parts.append("droid CLI found" if cli else "droid CLI missing (run install_droid.bat)")
         try:
             import droid_sdk  # noqa: F401
             parts.append("droid-sdk installed")
         except Exception:
-            parts.append('droid-sdk missing (py -m pip install "droid-sdk[mcp]")')
+            parts.append('droid-sdk missing (run install_droid.bat)')
         try:
             import droid_sdk.mcp  # noqa: F401
             parts.append("mcp extra installed")
         except Exception:
-            parts.append('mcp extra missing (py -m pip install "droid-sdk[mcp]")')
+            parts.append('mcp extra missing (run install_droid.bat)')
         parts.append("FACTORY_API_KEY set" if os.environ.get("FACTORY_API_KEY") else "FACTORY_API_KEY missing")
         ok = cli and all("missing" not in p for p in parts)
         if not ok:

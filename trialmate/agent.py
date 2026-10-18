@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from datetime import datetime
 from typing import Any, Optional
 
@@ -34,6 +35,8 @@ Channel: {channel}. Write plain text only: no markdown, no headings, no asterisk
 Person: {name}. Role: {role}.
 {role_block}
 Things to remember about them: {facts}
+Already done in this conversation by your tools (these really happened; don't redo them unless something new is reported, and don't say they didn't happen):
+{actions}
 
 Rules you always follow:
 - You are not a doctor. Never diagnose, never interpret test results, and never tell anyone to start, stop, skip, double \
@@ -85,7 +88,27 @@ def _system(app: Any, patient: dict) -> str:
     return SYSTEM.format(now_local=datetime.now(tz).strftime("%A %Y-%m-%dT%H:%M"), tz=app.settings.tz,
                          channel="iMessage/SMS" if patient["channel"] == "photon" else "text chat",
                          name=patient.get("name") or "unknown (ask what to call them if it helps)", role=role,
-                         role_block=block, facts="; ".join(facts) if facts else "nothing yet", role_rules=rules)
+                         role_block=block, facts="; ".join(facts) if facts else "nothing yet", role_rules=rules,
+                         actions=_recent_actions(app.db, patient["id"], tz))
+
+
+def _recent_actions(db: Any, patient_id: int, tz: Any, limit: int = 8) -> str:
+    """Short list of the tool actions already taken for this person, so the model knows what it did before."""
+    rows = db.all("SELECT kind, detail, created_at FROM audit WHERE patient_id=? AND kind LIKE 'tool:%' "
+                  "ORDER BY id DESC LIMIT ?", (patient_id, limit))
+    lines = []
+    for r in reversed(rows):
+        try:
+            data = json.loads(r["detail"] or "{}")
+        except ValueError:
+            data = {}
+        args = data.get("input") if isinstance(data, dict) else None
+        shown = ", ".join(f"{k}={str(v)[:40]}" for k, v in list((args or {}).items())[:3]
+                          if k in ("symptom", "grade", "serious", "urgency", "reason", "status", "condition", "nct_id",
+                                   "query", "fact", "when", "message", "note", "rating", "dose_taken", "location"))
+        when = datetime.fromtimestamp(r["created_at"], tz).strftime("%a %H:%M")
+        lines.append(f"- {when} {r['kind'].split(':', 1)[1]}" + (f" ({shown})" if shown else ""))
+    return "\n".join(lines) if lines else "- nothing yet"
 
 
 def _history(db: Any, patient_id: int, upto_id: int) -> list[dict]:
@@ -229,9 +252,11 @@ def _respond(app: Any, patient: dict, msg: dict) -> dict:
     error = None
     try:
         reply = run_model(app, ctx, mid)
+        app.status["llm"] = {"ok": True, "last_ok": time.time()}
     except LLMError as e:
         error, reply = str(e), ""
         db.audit(pid, "llm:error", error)
+        app.status["llm"] = {"ok": False, "last_error_at": time.time(), "error": error[:300]}
     if not reply:
         reply = ERROR_REPLY
         ctx.flags.add("error")

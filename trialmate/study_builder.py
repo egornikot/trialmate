@@ -61,7 +61,8 @@ Rules:
 TASK = """You are setting up a clinical trial for TrialMate, a text-message assistant for trial participants.
 
 The official ClinicalTrials.gov record is in trial.json in the current folder. Read it.
-Write study.json in the current folder, following the format and rules in SCHEMA.md.
+Write study.json in the current folder, following the format and rules in SCHEMA.md. Create and edit it with
+your file tools (Create / Edit), not with shell commands or scripts: commands are not allowed here.
 Then call the check_study tool. If it reports errors, fix study.json and call check_study again.
 Repeat until check_study returns OK. Do not edit trial.json or SCHEMA.md and do not create other files.
 Finish with one sentence summarizing the study you set up."""
@@ -185,14 +186,39 @@ def study_from_config(db: Any, config: dict, source: str) -> int:
 
 # --------------------------------------------------------------------------- engines
 
-def droid_available() -> bool:
+def find_droid_cli() -> Optional[str]:
+    """Path to the droid CLI. Factory's Windows installer puts it in %USERPROFILE%\\bin, which a window opened
+    before the install doesn't have on PATH yet, so look there too and add it to PATH for the SDK."""
+    import shutil
+
+    found = shutil.which("droid")
+    if found:
+        return found
+    for folder in (Path.home() / "bin", Path.home() / ".local" / "bin", Path.home() / ".factory" / "bin"):
+        for name in ("droid.exe", "droid"):
+            if (folder / name).is_file():
+                os.environ["PATH"] = str(folder) + os.pathsep + os.environ.get("PATH", "")
+                return str(folder / name)
+    return None
+
+
+def droid_missing() -> list[str]:
+    """What still has to be set up before Droid can build studies (empty list = ready)."""
+    missing = []
     if not os.environ.get("FACTORY_API_KEY"):
-        return False
+        missing.append("FACTORY_API_KEY in .env")
+    if not find_droid_cli():
+        missing.append("droid CLI (PowerShell: irm https://app.factory.ai/cli/windows | iex)")
     try:
         import droid_sdk  # noqa: F401
-        return True
+        import droid_sdk.mcp  # noqa: F401
     except Exception:
-        return False
+        missing.append('droid-sdk (py -m pip install "droid-sdk[mcp]")')
+    return missing
+
+
+def droid_available() -> bool:
+    return not droid_missing()
 
 
 def fallback_config(record: dict) -> dict:
@@ -307,6 +333,79 @@ class StudyBuilder:
         if not (workspace / "study.json").exists():
             raise RuntimeError("Droid finished without writing study.json")
 
+    def _permission_handler(self, bid: int, workspace: Path) -> Any:
+        """Answer Droid's permission requests: approve file edits inside this study's folder and our check_study
+        tool; deny shell commands and anything else. Never raises (an exception would cancel the request)."""
+        root = workspace.resolve()
+
+        def field(obj: Any, name: str) -> Any:
+            return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+        def inside(path_text: Any) -> bool:
+            if not path_text:
+                return True
+            try:
+                candidate = Path(str(path_text))
+                full = (candidate if candidate.is_absolute() else root / candidate).resolve()
+                return full == root or root in full.parents
+            except (OSError, ValueError):
+                return False
+
+        def judge(request: Any) -> tuple[bool, list[str]]:
+            actions = list(field(request, "actions") or [])
+            if not actions:
+                return False, ["no actions"]
+            ok, notes = True, []
+            for action in actions:
+                kind = type(action).__name__ if not isinstance(action, dict) else str(action.get("type", "dict"))
+                if kind in ("CreateFile", "EditAction", "ApplyPatchAction") or field(action, "file_path"):
+                    paths = [field(action, "file_path")]
+                    for f in field(action, "files") or []:
+                        paths += [field(f, "file_path"), field(f, "move_to")]
+                    good = all(inside(x) for x in paths)
+                    ok = ok and good
+                    name = field(action, "file_name") or Path(str(paths[0] or "?")).name
+                    notes.append(f"{kind} {name}" + ("" if good else " (outside the study folder)"))
+                elif kind == "McpToolAction":
+                    names = {str(field(action, k) or "") for k in ("tool_name", "actual_tool_name", "server_name")}
+                    good = any("check_study" in n or n == "trialmate" for n in names)
+                    ok = ok and good
+                    notes.append(f"MCP {field(action, 'actual_tool_name') or field(action, 'tool_name')}")
+                elif kind == "ExecuteAction":
+                    ok = False
+                    notes.append(f"command not allowed: {str(field(action, 'command') or field(action, 'full_command'))[:60]}")
+                else:
+                    ok = False
+                    notes.append(f"{kind} not allowed")
+            return ok, notes
+
+        def pick(request: Any, approve: bool) -> Any:
+            offered = [field(o, "value") if field(o, "value") is not None else o for o in (field(request, "options") or [])]
+            def name(v: Any) -> str:
+                return str(getattr(v, "name", v)).upper().replace("-", "_").split(".")[-1]
+            if approve:
+                for test in (lambda n: n == "PROCEED_ONCE",
+                             lambda n: n.startswith("PROCEED") and not any(w in n for w in ("ALWAYS", "AUTO", "NEW_SESSION", "EDIT")),
+                             lambda n: n.startswith("PROCEED") and "NEW_SESSION" not in n):
+                    for v in offered:
+                        if test(name(v)):
+                            return v
+            for v in offered:
+                if "CANCEL" in name(v):
+                    return v
+            from droid_sdk import ToolConfirmationOutcome  # type: ignore
+            return ToolConfirmationOutcome.PROCEED_ONCE if approve else ToolConfirmationOutcome.CANCEL
+
+        def decide(request: Any) -> Any:
+            try:
+                approve, notes = judge(request)
+            except Exception as e:  # never let an exception cancel silently: log it
+                approve, notes = False, [f"handler error {type(e).__name__}: {e}"]
+            outcome = pick(request, approve)
+            self.log(bid, "permission", f"{'approved' if approve else 'denied'}: {'; '.join(notes)[:300]}")
+            return request.respond(outcome)
+        return decide
+
     async def _droid_session(self, bid: int, workspace: Path, nct: str) -> None:
         from droid_sdk import Autonomy, Session, SessionConfig  # type: ignore
         from droid_sdk.mcp import create_sdk_mcp_server, tool  # type: ignore
@@ -328,6 +427,13 @@ class StudyBuilder:
         server = create_sdk_mcp_server(name="trialmate", tools=[check_study])
         kwargs: dict[str, Any] = {"cwd": str(workspace),
                                   "config": SessionConfig(autonomy=Autonomy.LOW, mcp_servers=[server])}
+        try:  # answer Droid's permission requests ourselves: file edits inside this folder only
+            from droid_sdk import InteractionHandlers  # type: ignore
+
+            kwargs["interactions"] = InteractionHandlers(on_permission=self._permission_handler(bid, workspace))
+            self.log(bid, "step", "Permission handler on: edits inside this folder are approved, commands are denied")
+        except Exception as e:
+            self.log(bid, "error", f"Permission handler unavailable ({type(e).__name__}: {e}); update droid-sdk")
         model = os.environ.get("FACTORY_MODEL", "").strip()
         if model:
             kwargs["model"] = model

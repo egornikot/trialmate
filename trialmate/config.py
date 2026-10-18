@@ -43,10 +43,15 @@ class Settings:
         style = _env("CHALK_API_STYLE").lower()
         self.chalk_api_style = style if style in {"openai", "anthropic"} else (
             "anthropic" if self.chalk_model.startswith(("anthropic/", "claude")) else "openai")
+        has_chalk = bool(self.chalk_router_key and self.chalk_env_id)
         mode = _env("LLM_MODE").lower()
         if mode not in {"anthropic", "chalk", "mock"}:
-            mode = ("chalk" if self.chalk_router_key and self.chalk_env_id
-                    else "anthropic" if self.anthropic_key else "mock")
+            mode = "chalk" if has_chalk else "anthropic" if self.anthropic_key else "mock"
+        # Never pick a provider whose credentials are missing: fall through to the next one, then the mock.
+        if mode == "chalk" and not has_chalk:
+            mode = "anthropic" if self.anthropic_key else "mock"
+        if mode == "anthropic" and not self.anthropic_key:
+            mode = "mock"
         self.llm_mode = mode
 
         self.photon_key = _env("PHOTON_API_KEY")

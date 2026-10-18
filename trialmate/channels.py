@@ -16,7 +16,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
-from .net import ssl_context
+from .net import USER_AGENT, ssl_context
 from .outbox import ChannelError, PermanentChannelError
 
 
@@ -43,7 +43,7 @@ class PhotonChannel:
         self.endpoint = f"{self.origin}/v1/projects/{urllib.parse.quote(self.project, safe='')}/messages"
 
     def _request(self, method: str, url: str, body: Optional[dict] = None, idempotency_key: str = "") -> tuple[int, Any]:
-        headers = {"Authorization": f"Bearer {self.key}", "Accept": "application/json"}
+        headers = {"Authorization": f"Bearer {self.key}", "Accept": "application/json", "User-Agent": USER_AGENT}
         data = None
         if body is not None:
             headers["Content-Type"] = "application/json"
@@ -102,6 +102,27 @@ class PhotonChannel:
                 break
         return out, newest
 
+    def probe(self, limit: int = 5) -> dict:
+        """Latest messages in the project with no filters, summarized for diagnosis (no text, masked handles)."""
+        status, page = self._request("GET", f"{self.endpoint}?{urllib.parse.urlencode({'order': 'desc', 'pageSize': str(limit)})}")
+        if status != 200:
+            return {"http": status, "error": json.dumps(page)[:300]}
+
+        def mask(handle: Any) -> str:
+            h = str(handle or "")
+            if "@" in h:
+                name, _, domain = h.partition("@")
+                return f"{name[:1]}…@{domain}"
+            return f"…{h[-4:]}" if len(h) > 4 else h
+
+        out = []
+        for m in (page.get("items") or [])[:limit]:
+            sb, rb, sp, ct = (m.get("sentBy") or {}), (m.get("receivedBy") or {}), (m.get("space") or {}), (m.get("content") or {})
+            out.append({"createdAt": m.get("createdAt"), "platform": m.get("platform"), "status": m.get("status"),
+                        "from": f"{sb.get('kind')} {mask(sb.get('handle'))}", "to": f"{rb.get('kind')} {mask(rb.get('handle'))}",
+                        "space": sp.get("kind"), "content": ct.get("type"), "would_accept": bool(self.parse(m))})
+        return {"http": 200, "latest": out, "checked_at": _iso(datetime.now(timezone.utc))}
+
     def parse(self, m: dict) -> Optional[dict]:
         sender, receiver = m.get("sentBy") or {}, m.get("receivedBy") or {}
         space, content = m.get("space") or {}, m.get("content") or {}
@@ -130,9 +151,17 @@ class PhotonPoller(threading.Thread):
 
     def run(self) -> None:
         db = self.app.db
-        cursor = db.get_kv("photon_cursor") or _iso(datetime.now(timezone.utc) - timedelta(seconds=10))
+        cursor = db.get_kv("photon_cursor") or _iso(datetime.now(timezone.utc) - timedelta(seconds=120))
         interval = self.app.settings.photon_poll_seconds
+        last_state = None  # log only when the connection state changes, not on every poll
+        polls = 0
         while not self.stop_event.is_set():
+            if polls % 15 == 0 and not self.app.status.get("photon", {}).get("received_total"):
+                try:  # diagnosis while nothing has come in yet: what does Photon hold for this project?
+                    self.app.status["photon_probe"] = self.channel.probe()
+                except Exception as e:
+                    self.app.status["photon_probe"] = {"error": str(e)[:300]}
+            polls += 1
             try:
                 items, newest = self.channel.poll(cursor)
                 for item in items:
@@ -140,7 +169,16 @@ class PhotonPoller(threading.Thread):
                 if newest != cursor:
                     cursor = newest
                     db.set_kv("photon_cursor", cursor)
-                self.app.status["photon"] = {"ok": True, "last_poll": time.time(), "cursor": cursor}
+                self.app.status["photon"] = {"ok": True, "last_poll": time.time(), "cursor": cursor,
+                                             "received_total": self.app.status.get("photon", {}).get("received_total", 0)
+                                             + len(items)}
+                if last_state != "ok":
+                    db.audit(None, "photon:ok", f"polling {self.channel.platform} messages")
+                    last_state = "ok"
             except Exception as e:
-                self.app.status["photon"] = {"ok": False, "last_poll": time.time(), "error": str(e)[:300]}
+                error = str(e)[:300]
+                self.app.status["photon"] = {"ok": False, "last_poll": time.time(), "error": error}
+                if last_state != error:
+                    db.audit(None, "photon:error", error)
+                    last_state = error
             self.stop_event.wait(interval)

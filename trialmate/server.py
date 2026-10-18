@@ -82,7 +82,7 @@ def state(app: Any) -> dict:
         "now": t,
         "config": {"llm": app.llm.name, "llm_label": getattr(app.llm, "label", ""), "model": getattr(app.llm, "model", ""),
                    "photon": "photon" in app.channels, "platform": s.photon_platform, "approval_mode": s.approval_mode,
-                   "tz": s.tz, "droid": app.builder_engine()},
+                   "tz": s.tz, "droid": app.builder_engine(), "droid_missing": app.droid_missing()},
         "studies": studies,
         "build": build,
         "status": app.status,
@@ -114,8 +114,8 @@ def conversation(app: Any, patient_id: int) -> dict:
     p = db.one("SELECT * FROM patients WHERE id=?", (patient_id,))
     if not p:
         return {"messages": []}
-    msgs = db.all("SELECT id, direction, body, redactions, created_at FROM messages WHERE patient_id=? ORDER BY id DESC LIMIT 80",
-                  (patient_id,))
+    msgs = db.all("SELECT id, direction, body, redactions, created_at FROM messages WHERE patient_id=?"
+                  " ORDER BY created_at DESC, id DESC LIMIT 80", (patient_id,))
     msgs.reverse()
     pending = db.all("SELECT id, body, reason, created_at FROM outbox WHERE patient_id=? AND status='needs_approval' ORDER BY id",
                      (patient_id,))

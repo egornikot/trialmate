@@ -133,7 +133,7 @@ class AnthropicLLM:
 
     def __init__(self, api_key: str, model: str, max_tokens: int = 1024, timeout: float = 90.0,
                  url: str = "", extra_headers: Optional[dict] = None, label: str = "",
-                 model_fallbacks: Optional[list] = None) -> None:
+                 model_fallbacks: Optional[list] = None, discover_models: bool = False) -> None:
         if not api_key:
             raise LLMError("API key is not set")
         self.api_key = api_key
@@ -146,20 +146,39 @@ class AnthropicLLM:
         # Alternative spellings of the model id to try once if the gateway rejects the first one
         # (e.g. Chalk's router may want "anthropic/claude-..." instead of "claude-...").
         self.model_fallbacks = [m for m in (model_fallbacks or []) if m and m != model]
+        # Direct API only: if the configured model id is unknown, ask /v1/models which ones this key can use.
+        self.discover_models = discover_models
+
+    def available_models(self) -> list[str]:
+        """Model ids this key can use, newest first, Sonnet before Haiku before the rest."""
+        base = self.url.rsplit("/messages", 1)[0]
+        req = urllib.request.Request(f"{base}/models?limit=100", method="GET", headers={
+            "x-api-key": self.api_key, "anthropic-version": "2023-06-01", "user-agent": USER_AGENT, **self.extra_headers})
+        with urllib.request.urlopen(req, timeout=20, context=ssl_context()) as resp:
+            ids = [m.get("id") for m in (json.load(resp).get("data") or []) if isinstance(m, dict) and m.get("id")]
+        rank = lambda mid: 0 if "sonnet" in mid else 1 if "haiku" in mid else 2  # noqa: E731
+        return sorted(ids, key=rank)  # stable sort keeps the API's newest-first order inside each family
 
     def create(self, system: str, messages: list[dict], tools: list[dict]) -> dict:
         try:
             return self._create(self.model, system, messages, tools)
         except LLMError as first:
             text = str(first).lower()
-            if not self.model_fallbacks or not any(c in text for c in (" 400:", " 404:", " 422:")) or "model" not in text:
+            if not any(c in text for c in (" 400:", " 404:", " 422:")) or "model" not in text:
                 raise
-            for alt in list(self.model_fallbacks):
+            candidates = list(self.model_fallbacks)
+            if self.discover_models:
+                try:
+                    candidates += [m for m in self.available_models() if m not in candidates]
+                except Exception:
+                    pass
+            for alt in [m for m in candidates if m != self.model][:4]:
                 try:
                     result = self._create(alt, system, messages, tools)
                 except LLMError:
                     continue
-                self.model, self.model_fallbacks = alt, []  # remember the spelling that works
+                # remember the model id that works
+                self.model, self.model_fallbacks, self.discover_models = alt, [], False
                 return result
             raise first
 

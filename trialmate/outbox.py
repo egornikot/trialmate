@@ -98,10 +98,13 @@ def deliver_one(app: Any) -> bool:
                    (str(e)[:500], now() + 2 ** attempts, row["id"]))
     else:
         t = now()
+        # Place the text in the chat where it was written, not when the worker got to it, so a quick second
+        # message from the person doesn't jump above the answer to their first. Held replies use send time.
+        shown_at = row["created_at"] if not row["decided_at"] and row["created_at"] else t
         with db.tx() as conn:
             conn.execute("UPDATE outbox SET status='sent', sent_at=?, last_error=NULL WHERE id=?", (t, row["id"]))
             conn.execute("INSERT INTO messages(patient_id,direction,body,external_id,processed,created_at)"
-                         " VALUES(?,?,?,?,1,?)", (patient["id"], "out", row["body"], external_id, t))
+                         " VALUES(?,?,?,?,1,?)", (patient["id"], "out", row["body"], external_id, shown_at))
     return True
 
 
