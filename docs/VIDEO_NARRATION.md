@@ -1,4 +1,4 @@
-# TrialMate video narration (about 1 min 45 s)
+# TrialMate video narration (about 1 min 35 s)
 
 Read it yourself or paste it into an AI voice tool (for example ElevenLabs or Clipchamp text-to-speech).
 Each block matches one scene of the video. The video also shows these lines as captions, so it works muted.
@@ -29,10 +29,5 @@ People looking for a trial get live, recruiting studies from ClinicalTrials.gov 
 And it's made for real phones: TrialMate connects to Photon's iMessage API, so the same agent works over
 iMessage.
 
-**6. Evals and models (1:22–1:37)**
-We measure it. Thirty-five labeled test messages check emergency detection, side-effect logging, and that
-nothing unsafe goes out without review. The agent runs on Claude, and one setting routes it through
-Chalk's AI Router instead.
-
-**7. Close (1:37–1:45)**
+**6. Close (1:28–1:36)**
 TrialMate. Answers any time for participants, and a human for every medical message.
