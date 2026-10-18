@@ -8,6 +8,11 @@ people for trials. A human coordinator approves every medical reply before it go
 Built at HackHarvard 2026 for **Reinvent Clinical Trials** (Regeneron), **Build a Messaging Agent with
 Photon 2.0** and **Best Use of the Factory Droid SDK**. The agent runs on Claude (Anthropic API).
 
+**📊 [Pitch deck (PDF)](docs/TrialMate_pitch_deck.pdf)** · **🧭 [Try it in 2 minutes](#try-it-in-2-minutes-no-phone-needed)** ·
+**🤖 [Where Droid is used](#where-factory-droid-is-used-study-builder)** · **🖼️ [Screenshots](docs/screenshots)**
+
+![TrialMate study team console](docs/screenshots/dashboard.jpg)
+
 ## Why
 
 The hard part of a trial is people, not chemistry: finding participants, keeping them in the study,
