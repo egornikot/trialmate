@@ -1,0 +1,7 @@
+.env
+data/
+__pycache__/
+*.pyc
+evals/results/run-*.json
+.DS_Store
+check-result.txt

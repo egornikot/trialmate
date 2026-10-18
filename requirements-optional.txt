@@ -1,0 +1,5 @@
+# The core app uses only the Python standard library.
+# Optional extras (Windows: py -m pip install -r requirements-optional.txt):
+tzdata           # real time zones on Windows (otherwise TrialMate uses your computer's local time)
+droid-sdk[mcp]   # Factory Droid Study Builder (needs Python 3.10+ and the droid CLI)
+certifi          # fixes CERTIFICATE_VERIFY_FAILED on some Python installs
