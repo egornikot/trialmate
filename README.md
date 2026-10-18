@@ -6,7 +6,7 @@ people for trials. A human coordinator approves every medical reply before it go
 **Factory's Droid sets up each new trial inside the app** from its ClinicalTrials.gov record.
 
 Built at HackHarvard 2026 for **Reinvent Clinical Trials** (Regeneron), **Build a Messaging Agent with
-Photon 2.0**, **Best Use of the Factory Droid SDK** and **Best Data-Driven Agent Built on Chalk**.
+Photon 2.0** and **Best Use of the Factory Droid SDK**. The agent runs on Claude (Anthropic API).
 
 ## Why
 
@@ -39,6 +39,9 @@ schedule, screening questions and safety rules. In TrialMate that's Droid's job,
      With low autonomy and that working folder, Droid can only edit files there.
    - It registers a **custom in-process tool, `check_study`**, built with `droid_sdk.mcp.create_sdk_mcp_server`.
      The tool validates `study.json` and runs its test messages against its own red-flag rules.
+   - It answers Droid's **permission requests** itself (`InteractionHandlers(on_permission=...)`): file edits
+     inside the study folder are approved, shell commands and any path outside the folder are denied, and
+     every decision is shown in the build log.
 4. Droid writes `study.json`: a plain-language summary and FAQ, the visit schedule, yes/no screening
    questions built from the eligibility criteria, **study-specific red-flag symptoms** (regex rules with
    urgency) and test messages. It calls `check_study`, fixes what fails and repeats until everything passes.
@@ -54,17 +57,55 @@ From then on, Droid's output runs the product:
 - Their texts are checked against Droid's red flags, for example "shaky and sweaty" in a diabetes
   study escalates as possible low blood sugar.
 
-If `FACTORY_API_KEY` or `droid-sdk` is missing, a basic rule-based builder runs instead so the flow works
-in development. The dashboard labels which engine built each study.
+If `FACTORY_API_KEY`, the `droid` CLI or `droid-sdk` is missing, a basic rule-based builder runs instead so
+the flow works in development. The dashboard labels which engine built each study, and its Droid chip says
+exactly what is missing.
 
-## Where Chalk is used
+### The Droid code, condensed (`trialmate/study_builder.py`, `StudyBuilder._droid_session`)
 
-- **Chalk AI Router.** Every model call goes through Chalk's router. With the HackHarvard key that's
-  `openai/gpt-6.1-sol` in Chalk's event environment (OpenAI chat format; `OpenAIChatLLM` in `trialmate/llm.py`
-  translates our tool calls). With your own Chalk environment and an Anthropic connection, set
-  `CHALK_MODEL=anthropic/claude-sonnet-5-5` and Claude is used instead. See `make_llm` in `trialmate/app.py`.
+```python
+from droid_sdk import Autonomy, InteractionHandlers, Session, SessionConfig
+from droid_sdk.mcp import create_sdk_mcp_server, tool
+
+@tool("check_study", "Validate study.json in the workspace and run its test messages.")
+async def check_study(path: str = "study.json") -> str:
+    errors = validate(json.loads((workspace / "study.json").read_text()), nct)   # same checks TrialMate uses
+    return "OK: all checks passed" if not errors else "ERRORS:\n- " + "\n- ".join(errors)
+
+server = create_sdk_mcp_server(name="trialmate", tools=[check_study])
+async with Session(cwd=str(workspace),                                         # one study folder only
+                   config=SessionConfig(autonomy=Autonomy.LOW, mcp_servers=[server]),
+                   interactions=InteractionHandlers(on_permission=approve_edits_in_folder_only)) as session:
+    async with session.stream(TASK) as stream:                                 # TASK: read trial.json,
+        async for event in stream:                                             # write study.json, call
+            self.log(build_id, f"droid:{type(event).__name__}", ...)           # check_study until OK
+```
+
+After the session, TrialMate validates `study.json` again (`validate()`), stores it as a **draft** study and
+waits for a human to click **Activate**. Where Droid's output is used afterwards:
+
+| Droid wrote | Used by | File |
+|---|---|---|
+| `prescreen_questions` | prospects who pick the trial are screened with them | `tools.py` (`get_trial_details`, `save_prescreen_referral`) |
+| `visits` | an enrolled participant's visit schedule and reminders | `seed.py` (`enroll`) |
+| `red_flags` (regex + urgency) | every participant text is checked; a match escalates to the coordinator | `safety.py` (`study_red_flag`), `agent.py` |
+| `faq` | stored as the study protocol; answers participants' questions | `study_builder.py`, `tools.py` (`search_protocol`) |
+| `test_messages` | Droid's own self-test inside `check_study` | `study_builder.py` (`validate`) |
+
+Test without a Factory account: `tests/test_core.py` (`test_droid_engine_with_sdk_shaped_fake`) drives this exact
+code with a stand-in SDK, including a first draft that fails `check_study`, the fix, and the permission handler
+approving in-folder edits while denying a shell command and a path outside the folder.
+
+## Which model runs it
+
+- **Claude via the Anthropic API** (default): set `ANTHROPIC_API_KEY` and `LLM_MODE=anthropic` in `.env`.
+  If the configured `ANTHROPIC_MODEL` isn't available to the key, TrialMate asks `/v1/models` and switches
+  to the newest Sonnet the key can use.
+- **Chalk AI Router** (optional, supported): set `CHALK_ROUTER_API_KEY`, `CHALK_ENV_ID`, `CHALK_MODEL` and
+  `LLM_MODE=chalk`. OpenAI-style models are translated by `OpenAIChatLLM` in `trialmate/llm.py`.
+- **Mock** (no key): rule-based replies so the whole app, tests and evals run offline.
+  A provider whose key is missing is skipped, so the app always starts. See `make_llm` in `trialmate/app.py`.
 - **Evals ("prove it works").** `evals/run_evals.py` scores the agent on 35 labeled messages; see below.
-  *Next: load `evals/results/latest.json` as a Chalk dataset and score runs with Chalk Evaluations.*
 
 ## Safety design (outside the model)
 
@@ -85,6 +126,22 @@ The model is never the last line of defense. These rules run in plain code:
    call, and Photon gets the same key on retry, so a crash can't double-text anyone (`trialmate/outbox.py`).
 7. **STOP/START/HELP** handled before the model, as carriers expect.
 
+## Try it in 2 minutes (no phone needed)
+
+Photon connects TrialMate to a real iMessage line, but you don't need it to judge the project. The dashboard has a
+**phone simulator** that goes through exactly the same agent, safety layer and approval queue.
+
+1. `py run.py` (Windows: double-click `start.bat`). Without any keys it runs a rule-based mock model; with
+   `ANTHROPIC_API_KEY` it runs Claude.
+2. In the phone simulator, as **Maria** (a participant), send: "When is my next visit?" → answered right away.
+   Then "Since my shot yesterday I have a headache and the spot is red" → the symptom is logged with a grade and the
+   reply waits in **Needs your approval**. Click **Approve & send**.
+3. Send "my throat feels like it's closing" → the 911 message goes out instantly, before any AI runs, and an
+   emergency escalation appears.
+4. Click **New person** and send "Any type 2 diabetes trials near Boston?" → live results from ClinicalTrials.gov.
+5. In **Studies**, type an NCT ID (e.g. `NCT07448974`) and click **Build study** → the Droid build log streams in.
+6. `py -m unittest discover -s tests` runs the 29 tests; `py evals/run_evals.py` scores the 35 labeled messages.
+
 ## Quick start
 
 The core app needs Python 3.9+ and **no packages**: it's all standard library. It runs on Windows, macOS
@@ -103,6 +160,8 @@ and Linux.
 |---|---|
 | `start.bat` | Starts TrialMate and opens the dashboard |
 | `check.bat` | Tests your keys and connections |
+| `reset.bat` | Wipes the demo database and starts fresh |
+| `install_droid.bat` | Installs the Factory droid CLI and Droid SDK (needed for the Droid study builder) |
 | `chat.bat` | Text the agent from a plain window |
 | `evals.bat` | Scores the agent on 35 labeled messages |
 | `prepare_upload.bat` | Makes a clean copy for GitHub (no `.env`) |
@@ -186,7 +245,7 @@ Dashboard phone simulator ──────────────── /api/
                                                           v
                  guard.redact ─> safety (911/988 now · study red flags) ─> outbox
                                                           │
-                         Claude (direct or via Chalk AI Router) + role-gated tools
+                         Claude (Anthropic API) + role-gated tools    
                          ClinicalTrials.gov · protocol search · SQLite records
                                                           │
                          approval policy ─ held ─> coordinator dashboard ─ approve ─> outbox ─> Photon
@@ -201,7 +260,7 @@ Dashboard "Build study" ─> ClinicalTrials.gov record ─> Factory Droid (SDK, 
 | `trialmate/tools.py` | 10 tools (trial search, symptom log, check-ins, reminders, escalation, ...) |
 | `trialmate/study_builder.py` | **Factory Droid** study setup, `check_study` tool, validation |
 | `trialmate/ctgov.py` | ClinicalTrials.gov API v2 client |
-| `trialmate/llm.py`, `app.py` | Anthropic Messages API (direct or **Chalk AI Router**), offline mock |
+| `trialmate/llm.py`, `app.py` | Claude (Anthropic Messages API), optional Chalk AI Router, offline mock |
 | `trialmate/guard.py`, `safety.py` | Redaction, emergency detection, study red flags, outbound review |
 | `trialmate/outbox.py` | Write-before-send queue with approvals and retries |
 | `trialmate/channels.py` | Photon poll/send, local simulator channel |
@@ -218,7 +277,7 @@ Dashboard "Build study" ─> ClinicalTrials.gov record ─> Factory Droid (SDK, 
    escalates it as urgent, the symptom is logged and the reply waits for approval. Approve it, and it lands on
    their phone.
 4. "My throat feels like it's closing" gets the 911 message instantly.
-5. **Chalk:** show `evals/results/latest.md` and the router usage in Chalk.
+5. **Evals:** show `evals/results/latest.md`: 35 labeled messages, zero unsafe texts sent without review.
 
 ## How this was built
 

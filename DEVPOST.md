@@ -1,9 +1,10 @@
 # Devpost submission draft: TrialMate
 
 > Paste each section into Devpost. Replace every **[fill in]** before submitting.
-> Team: **[fill in names]** · Repo: **[fill in GitHub link]** · Video: **[fill in YouTube/Drive link]**
-> Challenges to select: Reinvent Clinical Trials (Regeneron) · Build a Messaging Agent with Photon 2.0 ·
-> Best Use of the Factory Droid SDK · Best Data-Driven Agent Built on Chalk
+> Team: **[fill in names]** · Repo: https://github.com/egornikot/trialmate (must be **public**) ·
+> Video: **[fill in YouTube link]** · Pitch deck: `docs/TrialMate_pitch_deck.pdf` in the repo
+> Challenges to tick: Regeneron Healthcare: Reinvent Clinical Trials & Drug Development ·
+> Build a Messaging Agent with Photon 2.0 · Best Use of Factory Droid SDK
 
 ## Tagline
 
@@ -48,9 +49,9 @@ coordinator approves it.
 - **Factory Droid SDK:** `study_builder.py` runs a Droid session with low autonomy, scoped to one study's
   folder, plus a custom in-process `check_study` tool. Droid's steps stream to the dashboard live. Droid's
   output drives screening, visit schedules and red-flag escalation in the running product.
-- **Chalk:** every Claude call can run through Chalk's AI Router (budgets, fallbacks, usage per key).
-  Our 35-case labeled eval suite measures whether the agent works. **[fill in what you used in Chalk after
-  talking to their team]**
+- **Claude:** the agent runs on Claude Sonnet through the Anthropic API, with a tool loop of up to six
+  steps. A 35-case labeled eval suite measures whether it behaves safely. Chalk's AI Router is also
+  supported as a drop-in model gateway (`LLM_MODE=chalk`).
 - **Safety outside the model:** redaction of SSNs, card numbers and passwords before the AI sees them; a
   deterministic emergency detector with negation handling; an approval gate for anything that looks like
   dosing advice, a diagnosis or unblinding; STOP/HELP handling; a write-before-send outbox.
@@ -70,15 +71,23 @@ coordinator approves it.
 - **Messaging rules.** A shared iMessage line can't start a conversation, so the first text has to come
   from the participant; reminders and check-ins work after that. Every send carries an idempotency key so
   retries never double-text anyone.
-- **[fill in anything that went wrong on-site, e.g. Photon setup or Wi-Fi]**
+- **Droid's permission requests.** At low autonomy Droid asks before creating files, and with no handler the
+  request is cancelled, so our first real builds finished without writing anything. We now answer every
+  request in code: edits inside the study folder are approved, shell commands and outside paths are denied,
+  and each decision is shown in the build log.
+- **Photon's shared line routes by sender.** Texts only reach the project from the exact phone number or
+  Apple ID registered as the sender, so we added a diagnostics file that shows what Photon holds for the
+  project without exposing message text.
 
 ## Accomplishments that we're proud of
 
-- A judge can text the number from their own phone and watch it hit the dashboard.
+- The whole flow works end to end on a laptop: a judge can use the dashboard's phone simulator, which goes
+  through the same agent, safety layer and approval queue as iMessage via Photon.
 - No medical reply reaches a patient without a human, and emergencies still get an instant answer.
 - Droid's study setup must pass its own tests before it can load, and TrialMate re-checks it.
-- Eval results on 35 labeled messages: **[fill in from evals/results/latest.md: emergency recall, side
-  effects logged, medical replies held, secrets that reached the model]**
+- Eval results on 35 labeled messages (baseline run): emergencies caught 6/6, false alarms 0/29, urgent
+  cases sent to a human 7/7, unsafe texts sent without review 0, secrets that reached the model 0/2.
+  Plus 30 automated tests.
 
 ## What we learned
 
@@ -88,7 +97,6 @@ coordinator approves it.
   regressions we would have demoed by accident.
 - Coding agents are useful inside products, not just for writing them, as long as they work in a sandboxed
   folder, check their own output and hand the result to a human for approval.
-- **[fill in a personal lesson]**
 
 ## What's next
 
@@ -99,4 +107,4 @@ coordinator approves it.
 
 ## Built with
 
-python · sqlite · claude · anthropic · photon · imessage · factory-droid · chalk · clinicaltrials.gov · javascript
+python · sqlite · claude · anthropic · photon · imessage · factory-droid · clinicaltrials.gov · javascript
