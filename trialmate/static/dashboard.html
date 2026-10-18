@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrialMate Console</title>
+<style>
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --ink: #14202b; --muted: #5d6b78; --line: #e2e7ec;
+  --accent: #0b7a75; --accent-ink: #ffffff; --accent-soft: #e2f3f2;
+  --blue: #1f6feb; --bubble-in: #1f6feb; --bubble-out: #e9edf1;
+  --g1: #2e7d32; --g2: #b26a00; --g3: #c4410c; --g4: #b3261e;
+  --warn-soft: #fff4e5; --danger-soft: #fdecea; --ok-soft: #e8f5e9;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419; --panel: #171e26; --ink: #e6edf3; --muted: #8b98a5; --line: #26313c;
+    --accent: #2bb3ab; --accent-ink: #06201f; --accent-soft: #123331;
+    --bubble-in: #2f6fd6; --bubble-out: #26313c;
+    --warn-soft: #3a2a10; --danger-soft: #3b1715; --ok-soft: #12301a;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--ink); }
+header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--panel);
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+.logo { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; color: var(--accent-ink); }
+.sub { color: var(--muted); font-weight: 400; font-size: 13px; }
+.chips { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.chip.bad { background: var(--danger-soft); color: var(--g4); border-color: transparent; }
+main { padding: 16px 20px 40px; max-width: 1600px; margin: 0 auto; }
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); }
+.kpi .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .l { color: var(--muted); font-size: 12px; }
+.kpi.alert .v { color: var(--g4); }
+.grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.1fr) 380px; gap: 16px; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.panel h2 { margin: 0; font-size: 13px; letter-spacing: .02em; text-transform: uppercase; color: var(--muted);
+  padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+.panel h2 .count { background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 8px; font-size: 11px; }
+.empty { color: var(--muted); padding: 14px; font-size: 13px; }
+.item { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.item:last-child { border-bottom: 0; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.name { font-weight: 600; }
+.time { color: var(--muted); font-size: 12px; margin-left: auto; }
+.quote { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--line); color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+textarea { width: 100%; min-height: 70px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  font: inherit; background: var(--bg); color: var(--ink); }
+button { font: inherit; font-size: 13px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+button.small { padding: 3px 9px; font-size: 12px; }
+button:disabled { opacity: .5; cursor: default; }
+.actions { display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+.badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); }
+.badge.reason { background: var(--warn-soft); color: var(--g2); font-weight: 600; }
+.badge.emergency, .badge.g4, .badge.g5 { background: var(--danger-soft); color: var(--g4); }
+.badge.urgent, .badge.g3 { background: var(--danger-soft); color: var(--g3); }
+.badge.g2, .badge.routine { background: var(--warn-soft); color: var(--g2); }
+.badge.g1, .badge.likely { background: var(--ok-soft); color: var(--g1); }
+.badge.participant { background: var(--accent-soft); color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+tr:last-child td { border-bottom: 0; }
+.bar { height: 6px; background: var(--bg); border-radius: 999px; overflow: hidden; width: 70px; display: inline-block; vertical-align: middle; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+/* phone */
+.phone { padding: 12px; }
+.persona { display: flex; gap: 8px; margin-bottom: 10px; }
+.persona select { flex: 1; font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.screen { border: 1px solid var(--line); border-radius: 22px; background: var(--bg); height: 520px; display: flex; flex-direction: column; overflow: hidden; }
+.screen .top { text-align: center; padding: 10px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); background: var(--panel); }
+.screen .top b { display: block; color: var(--ink); font-size: 14px; }
+.msgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.bubble { max-width: 82%; padding: 8px 12px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; font-size: 14px; }
+.bubble.in { align-self: flex-end; background: var(--bubble-in); color: #fff; border-bottom-right-radius: 6px; }
+.bubble.out { align-self: flex-start; background: var(--bubble-out); color: var(--ink); border-bottom-left-radius: 6px; }
+.bubble.pending { align-self: flex-start; background: transparent; border: 1px dashed var(--g2); color: var(--muted); font-size: 12.5px; }
+.bubble .tag { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--g2); margin-bottom: 2px; }
+.redacted { font-size: 11px; opacity: .85; display: block; margin-top: 2px; }
+.typing { align-self: flex-start; color: var(--muted); font-size: 12px; padding: 4px 8px; }
+.compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); background: var(--panel); }
+.compose input { flex: 1; font: inherit; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; background: var(--bg); color: var(--ink); }
+.samples { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.samples button { font-size: 12px; padding: 3px 9px; border-radius: 999px; }
+.addstudy { display: flex; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.addstudy input { flex: 1; min-width: 0; font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--bg); color: var(--ink); text-transform: uppercase; }
+.buildlog { margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--bg); max-height: 220px; overflow-y: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.buildlog div { white-space: pre-wrap; word-break: break-word; }
+.buildlog .k { color: var(--accent); font-weight: 700; }
+.buildlog .err { color: var(--g4); }
+.details { margin-top: 8px; font-size: 13px; }
+.details ul { margin: 4px 0 8px 18px; padding: 0; }
+.badge.active { background: var(--ok-soft); color: var(--g1); }
+.badge.draft { background: var(--warn-soft); color: var(--g2); }
+.badge.droid { background: var(--accent-soft); color: var(--accent); }
+.trace { max-height: 360px; overflow-y: auto; }
+.trace .item { font-size: 12.5px; }
+.trace code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--muted); word-break: break-word; }
+@media (max-width: 1250px) { .grid { grid-template-columns: minmax(0, 1fr) 380px; } .grid .col:nth-child(2) { grid-column: 1; } .grid .col:nth-child(3) { grid-row: 1 / span 2; grid-column: 2; } }
+@media (max-width: 860px) { .grid { grid-template-columns: 1fr; } .grid .col:nth-child(3) { grid-row: auto; grid-column: auto; } .kpis { grid-template-columns: repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="logo">✚</div>TrialMate <span class="sub">Study team console</span></div>
+  <div class="chips" id="chips"></div>
+</header>
+<main>
+  <section class="kpis" id="kpis"></section>
+  <div class="grid">
+    <div class="col">
+      <div class="panel"><h2>Needs your approval <span class="count" id="approvalCount">0</span></h2><div id="approvals"></div></div>
+      <div class="panel"><h2>Escalations</h2><div id="escalations"></div></div>
+    </div>
+    <div class="col">
+      <div class="panel"><h2>Studies <span class="sub" style="text-transform:none;letter-spacing:0">· set up by Factory Droid</span></h2>
+        <form class="addstudy" id="addStudy">
+          <input id="nct" placeholder="NCT ID, e.g. NCT05123456" autocomplete="off" spellcheck="false">
+          <button class="primary" id="buildBtn">Build study</button>
+        </form>
+        <div id="build"></div>
+        <div id="studies"></div>
+      </div>
+      <div class="panel"><h2>Side-effect reports</h2><div id="events"></div></div>
+      <div class="panel"><h2>Pre-screen referrals</h2><div id="referrals"></div></div>
+      <div class="panel"><h2>People</h2><div id="people"></div></div>
+    </div>
+    <div class="col">
+      <div class="panel">
+        <h2>Phone simulator</h2>
+        <div class="phone">
+          <div class="persona">
+            <select id="persona"></select>
+            <button class="small" id="newVisitor" title="Start as a brand-new person">New person</button>
+          </div>
+          <div class="screen">
+            <div class="top"><b id="phoneName">TrialMate</b><span id="phoneSub">Text message</span></div>
+            <div class="msgs" id="msgs"></div>
+            <form class="compose" id="compose">
+              <input id="text" autocomplete="off" placeholder="Text the agent…">
+              <button class="primary" id="sendBtn">Send</button>
+            </form>
+          </div>
+          <div class="samples" id="samples"></div>
+        </div>
+      </div>
+      <div class="panel"><h2>Agent trace</h2><div class="trace" id="trace"></div></div>
+    </div>
+  </div>
+</main>
+<script>
+const token = new URLSearchParams(location.search).get("token");
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function api(path, body) {
+  const opts = { headers: { "Content-Type": "application/json" } };
+  if (token) opts.headers["X-Token"] = token;
+  if (body !== undefined) { opts.method = "POST"; opts.body = JSON.stringify(body); }
+  const r = await fetch(path, opts);
+  return r.json();
+}
+function ago(ts) {
+  if (!ts) return "";
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
+let S = null, current = { handle: "sim:maria", patientId: null }, keys = {};
+function changed(name, value) { const k = JSON.stringify(value); if (keys[name] === k) return false; keys[name] = k; return true; }
+
+function renderChips(c, st) {
+  const ph = st.photon;
+  const photon = !c.photon ? `<span class="chip">Photon: off (simulator only)</span>`
+    : ph && ph.ok === false ? `<span class="chip bad" title="${esc(ph.error)}">Photon ${esc(c.platform)}: error</span>`
+    : `<span class="chip on">Photon ${esc(c.platform)}: live</span>`;
+  const model = c.llm !== "mock" ? `${esc(c.llm_label || "Claude")} · ${esc(c.model)}` : "Mock model (no API key)";
+  const droidNeeds = (c.droid_missing || []).join(" · ");
+  const droid = c.droid === "droid" ? `<span class="chip on">Droid: ready</span>`
+    : `<span class="chip" title="${esc("Needs: " + (droidNeeds || "FACTORY_API_KEY and droid-sdk") + ". Restart start.bat after installing.")}">Droid: not set up (basic builder)</span>`;
+  $("chips").innerHTML = `<span class="chip ${c.llm !== "mock" ? "on" : "bad"}">${model}</span>${photon}${droid}<span class="chip">Approval: ${esc(c.approval_mode)}</span>`;
+}
+let openStudy = null;
+function renderStudies(list, build) {
+  if (changed("build", build)) {
+    if (!build) { $("build").innerHTML = ""; }
+    else {
+      const head = build.status === "running" ? `Building ${esc(build.nct_id)} with ${build.engine === "droid" ? "Factory Droid" : "the basic builder"}…`
+        : build.status === "done" ? `Built ${esc(build.nct_id)} with ${build.engine === "droid" ? "Factory Droid" : "the basic builder"}` : `Build of ${esc(build.nct_id)} failed`;
+      $("build").innerHTML = `<div class="buildlog" id="buildlog"><div class="k">${head}</div>${build.log.map((l) =>
+        `<div class="${l.kind === "error" ? "err" : ""}"><span class="k">${esc(l.kind.replace("droid:", "droid · "))}</span> ${esc(l.text)}</div>`).join("")}</div>`;
+      const el = $("buildlog"); el.scrollTop = el.scrollHeight;
+    }
+    $("buildBtn").disabled = !!(build && build.status === "running");
+  }
+  if (!changed("studies", [list, openStudy])) return;
+  $("studies").innerHTML = list.map((s) => `
+    <div class="item"><div class="row"><span class="badge ${esc(s.status)}">${esc(s.status)}</span>
+      ${s.source === "droid" ? '<span class="badge droid">built by Droid</span>' : s.source === "fallback" ? '<span class="badge">basic builder</span>' : ""}
+      <span class="name">${esc(s.code)}</span>${s.nct_id ? `<a href="https://clinicaltrials.gov/study/${esc(s.nct_id)}" target="_blank" rel="noopener">${esc(s.nct_id)}</a>` : ""}
+      <span class="time">${s.participants} enrolled</span></div>
+    <div class="sub">${esc(s.title)}</div>
+    ${openStudy === s.id ? `<div class="details">${s.summary ? `<div>${esc(s.summary)}</div>` : ""}
+      ${s.prescreen_questions.length ? `<b>Screening questions</b><ul>${s.prescreen_questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : ""}
+      ${s.red_flags.length ? `<b>Red flags</b><ul>${s.red_flags.map((r) => `<li><span class="badge ${esc(r.urgency)}">${esc(r.urgency)}</span> ${esc(r.name)}: <span class="sub">${esc(r.why)}</span></li>`).join("")}</ul>` : ""}
+      ${s.visits.length ? `<b>Visits</b><ul>${s.visits.map((v) => `<li>Day ${v.day}: ${esc(v.title)}</li>`).join("")}</ul>` : ""}
+      <div class="sub">${s.counts.faq} FAQ answers · ${s.counts.test_messages} test messages passed</div></div>` : ""}
+    <div class="actions">${s.counts.faq ? `<button class="small" onclick="openStudy = openStudy === ${s.id} ? null : ${s.id}; keys.studies = null; renderStudies(S.studies, S.build)">${openStudy === s.id ? "Hide" : "Review"}</button>` : ""}
+      ${s.status === "draft" ? `<button class="small primary" onclick="post('/api/studies/${s.id}/activate')">Activate</button>` : ""}</div></div>`).join("");
+}
+$("addStudy").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const nct = $("nct").value.trim().toUpperCase(); if (!nct) return;
+  const r = await api("/api/studies/build", { nct_id: nct });
+  if (r.error) alert(r.error); else $("nct").value = "";
+  keys.build = null; refresh();
+});
+function renderKpis(s) {
+  const tiles = [
+    ["Awaiting approval", s.awaiting_approval, s.awaiting_approval > 0],
+    ["Open escalations", s.open_escalations + (s.emergencies ? ` (${s.emergencies} 🚨)` : ""), s.emergencies > 0],
+    ["Side effects · 7d", s.events_7d + (s.severe_7d ? ` (${s.severe_7d} severe)` : ""), s.severe_7d > 0],
+    ["Dose adherence · 7d", s.adherence_7d == null ? "–" : s.adherence_7d + "%", false],
+    ["New referrals", s.referrals_new, false],
+    ["Messages · 24h", s.messages_today, false],
+  ];
+  $("kpis").innerHTML = tiles.map(([l, v, a]) => `<div class="kpi ${a ? "alert" : ""}"><div class="v">${esc(v)}</div><div class="l">${l}</div></div>`).join("");
+}
+function renderApprovals(list) {
+  $("approvalCount").textContent = list.length;
+  if (!changed("approvals", list.map((a) => a.id))) return;
+  $("approvals").innerHTML = list.length ? list.map((a) => `
+    <div class="item" data-id="${a.id}">
+      <div class="row"><span class="name">${esc(a.patient)}</span>${(a.reason || "").split("; ").filter(Boolean).map((r) => `<span class="badge reason">${esc(r)}</span>`).join("")}<span class="time">${ago(a.created_at)}</span></div>
+      ${a.in_reply_to ? `<div class="quote">“${esc(a.in_reply_to)}”</div>` : ""}
+      <textarea id="draft-${a.id}">${esc(a.body)}</textarea>
+      <div class="actions"><button onclick="decide(${a.id}, 'reject')">Reject</button><button class="primary" onclick="decide(${a.id}, 'approve')">Approve &amp; send</button></div>
+    </div>`).join("") : `<div class="empty">Nothing waiting. Medical replies the agent drafts will appear here before they're sent.</div>`;
+}
+async function decide(id, action) {
+  const body = action === "approve" ? { body: $("draft-" + id).value } : {};
+  await api(`/api/outbox/${id}/${action}`, body);
+  keys.approvals = null; refresh();
+}
+function renderEscalations(list) {
+  if (!changed("esc", list)) return;
+  $("escalations").innerHTML = list.length ? list.map((e) => `
+    <div class="item"><div class="row"><span class="badge ${esc(e.urgency)}">${esc(e.urgency)}</span><span class="name">${esc(e.patient)}</span><span class="time">${ago(e.created_at)}</span></div>
+    <div class="quote">${esc(e.reason)}</div>
+    <div class="actions"><button class="small" onclick="post('/api/escalations/${e.id}/resolve')">Resolve</button></div></div>`).join("")
+    : `<div class="empty">No open escalations.</div>`;
+}
+function renderEvents(list) {
+  if (!changed("events", list)) return;
+  $("events").innerHTML = list.length ? `<table><tr><th>When</th><th>Who</th><th>Symptom</th><th>Grade</th><th></th></tr>${list.map((e) => `
+    <tr><td>${ago(e.created_at)}</td><td>${esc(e.patient)}</td><td><b>${esc(e.symptom)}</b>${e.serious ? ' <span class="badge g4">serious</span>' : ""}<div class="sub">${esc(e.description || "")}${e.onset ? " · " + esc(e.onset) : ""}</div></td>
+    <td><span class="badge g${e.grade}">G${e.grade}</span></td>
+    <td>${e.status === "new" ? `<button class="small" onclick="post('/api/events/${e.id}/review')">Reviewed</button>` : `<span class="sub">reviewed</span>`}</td></tr>`).join("")}</table>`
+    : `<div class="empty">No reports yet.</div>`;
+}
+function renderReferrals(list) {
+  if (!changed("refs", list)) return;
+  $("referrals").innerHTML = list.length ? list.map((r) => `
+    <div class="item"><div class="row"><span class="badge ${esc(r.likely_match)}">${esc(r.likely_match)}</span><span class="name">${esc(r.patient)}</span>
+    <a href="https://clinicaltrials.gov/study/${esc(r.nct_id)}" target="_blank" rel="noopener">${esc(r.nct_id)}</a><span class="time">${ago(r.created_at)}</span></div>
+    <div class="sub">${esc(r.trial_title || "")}</div><div class="quote">${esc(r.summary)}</div>
+    <div class="actions">${r.status === "new" ? `<button class="small" onclick="post('/api/referrals/${r.id}/status', {status: 'contacted'})">Mark contacted</button>` : `<span class="sub">${esc(r.status)}</span>`}</div></div>`).join("")
+    : `<div class="empty">People looking for trials get pre-screened by the agent, and their referrals land here.</div>`;
+}
+function renderPeople(list) {
+  if (!changed("people", list.map((p) => [p.id, p.name, p.role, p.adherence, p.open_escalations, p.opted_out, p.last_seen_at]))) return;
+  $("people").innerHTML = `<table><tr><th>Person</th><th>Role</th><th>Adherence</th><th></th></tr>${list.map((p) => `
+    <tr><td><b>${esc(p.name)}</b><div class="sub">${esc(p.handle)} · ${esc(p.channel)}${p.opted_out ? " · opted out" : ""}</div></td>
+    <td><span class="badge ${esc(p.role)}">${esc(p.role)}</span></td>
+    <td>${p.adherence == null ? "–" : `<span class="bar"><i style="width:${p.adherence}%"></i></span> ${p.adherence}%`}</td>
+    <td style="white-space:nowrap"><button class="small" onclick="openChat(${p.id})">Chat</button>
+    ${p.role === "participant" ? `<button class="small" onclick="post('/api/patients/${p.id}/checkin')">Check-in</button>` : `<button class="small" onclick="enroll(${p.id})">Enroll</button>`}</td></tr>`).join("")}</table>`;
+}
+function renderTrace(list) {
+  if (!changed("trace", list.map((t) => t.id))) return;
+  $("trace").innerHTML = list.length ? list.map((t) => {
+    let detail = t.detail || "";
+    try { const d = JSON.parse(detail); detail = "in " + JSON.stringify(d.input) + "  →  " + JSON.stringify(d.output); } catch (e) {}
+    return `<div class="item"><div class="row"><b>${esc(t.kind)}</b><span class="sub">${esc(t.patient || "")}</span><span class="time">${ago(t.created_at)}</span></div><code>${esc(detail.slice(0, 400))}</code></div>`;
+  }).join("") : `<div class="empty">Tool calls and safety decisions will stream here.</div>`;
+}
+async function post(path, body) { await api(path, body || {}); Object.keys(keys).forEach((k) => (keys[k] = null)); refresh(); }
+async function enroll(id) {
+  const active = (S.studies || []).filter((s) => s.status === "active");
+  if (!active.length) { alert("Activate a study first."); return; }
+  let study = active[0];
+  if (active.length > 1) {
+    const pick = prompt("Enroll in which study? Type the number:\n" + active.map((s, i) => `${i + 1}. ${s.code}: ${s.title}`).join("\n"), "1");
+    if (pick === null) return;
+    study = active[Number(pick) - 1] || active[0];
+  }
+  const name = prompt("Name for this participant (optional):") || "";
+  await post(`/api/patients/${id}/enroll`, { name, study_id: study.id });
+}
+
+// ---------------------------------------------------------------- simulator
+const SAMPLES = {
+  participant: ["I've had a headache since my shot this morning", "Took my dose today, feeling 8/10", "Remind me to fill out my diary at 9pm",
+    "When is my next visit?", "Do I get paid for parking?", "Can I take Advil?", "Am I on the placebo?", "My lips are swelling up"],
+  prospect: ["Are there any asthma trials in Boston?", "I have type 2 diabetes, anything near Cambridge MA?", "What is a clinical trial?"],
+};
+function renderPersonas(people) {
+  const sims = people.filter((p) => p.handle.startsWith("sim:"));
+  if (!changed("personas", sims.map((p) => [p.id, p.name, p.role]))) return;
+  const sel = $("persona");
+  const opts = sims.map((p) => `<option value="${esc(p.handle)}" data-id="${p.id}">${esc(p.name)} (${esc(p.role)})</option>`);
+  const others = people.filter((p) => !p.handle.startsWith("sim:")).map((p) => `<option value="id:${p.id}" data-id="${p.id}">${esc(p.name)} · ${esc(p.handle)} (real, read-only)</option>`);
+  sel.innerHTML = opts.join("") + others.join("");
+  if (![...sel.options].some((o) => o.value === current.handle)) {
+    sel.insertAdjacentHTML("beforeend", `<option value="${esc(current.handle)}">${esc(current.handle.replace("sim:", ""))} (new)</option>`);
+  }
+  sel.value = current.handle;
+}
+function selectPersona(value) {
+  current.handle = value;
+  const opt = [...$("persona").options].find((o) => o.value === value);
+  current.patientId = opt && opt.dataset.id ? Number(opt.dataset.id) : null;
+  keys.chat = null; renderChat(null); loadChat();
+}
+$("persona").addEventListener("change", (e) => selectPersona(e.target.value));
+$("newVisitor").addEventListener("click", () => {
+  current = { handle: "sim:visitor-" + Math.random().toString(36).slice(2, 6), patientId: null };
+  keys.personas = null; keys.chat = null; renderChat(null); if (S) renderPersonas(S.patients);
+});
+function openChat(id) {
+  const p = S.patients.find((x) => x.id === id); if (!p) return;
+  current = { handle: p.handle.startsWith("sim:") ? p.handle : "id:" + id, patientId: id };
+  $("persona").value = current.handle; keys.chat = null; loadChat();
+}
+let sending = false;
+function renderChat(c) {
+  const readOnly = current.handle.startsWith("id:");
+  $("text").disabled = readOnly; $("sendBtn").disabled = readOnly || sending;
+  $("text").placeholder = readOnly ? "Real conversation — replies go through approvals" : "Text the agent…";
+  const p = c && c.patient;
+  $("phoneName").textContent = p ? (p.name || p.handle) : current.handle.replace("sim:", "");
+  $("phoneSub").textContent = p ? `${p.role} · ${p.handle}` : "New conversation";
+  const role = p ? p.role : "prospect";
+  $("samples").innerHTML = readOnly ? "" : (SAMPLES[role] || []).map((s) => `<button type="button">${esc(s)}</button>`).join("");
+  [...$("samples").children].forEach((b) => (b.onclick = () => { $("text").value = b.textContent; $("text").focus(); }));
+  if (!c) { $("msgs").innerHTML = `<div class="empty">Say hi to start.</div>`; return; }
+  const html = c.messages.map((m) => `<div class="bubble ${m.direction}">${esc(m.body)}${m.redactions ? `<span class="redacted">🔒 removed before AI: ${esc(m.redactions)}</span>` : ""}</div>`)
+    .concat(c.queued.map((q) => `<div class="bubble out" style="opacity:.6">${esc(q.body)}</div>`))
+    .concat(c.pending.map((q) => `<div class="bubble pending"><span class="tag">Draft · waiting for coordinator</span>${esc(q.body)}</div>`))
+    .concat(sending ? [`<div class="typing">TrialMate is typing…</div>`] : []);
+  $("msgs").innerHTML = html.join("");
+  $("msgs").scrollTop = $("msgs").scrollHeight;
+}
+async function loadChat() {
+  if (!current.patientId) { if (sending) renderChat({ patient: null, messages: [], queued: [], pending: [] }); return; }
+  const c = await api(`/api/conversation?patient_id=${current.patientId}`);
+  if (changed("chat", [c, sending])) renderChat(c);
+}
+$("compose").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("text").value.trim(); if (!text || sending) return;
+  $("text").value = ""; sending = true; keys.chat = null;
+  const optimistic = { patient: null, messages: [], queued: [], pending: [] };
+  if (current.patientId) { const c = await api(`/api/conversation?patient_id=${current.patientId}`); Object.assign(optimistic, c); }
+  optimistic.messages = optimistic.messages.concat([{ direction: "in", body: text }]);
+  renderChat(optimistic);
+  try {
+    const r = await api("/api/simulate", { handle: current.handle, text });
+    if (r.patient_id) current.patientId = r.patient_id;
+  } finally { sending = false; keys.chat = null; keys.personas = null; await refresh(); await loadChat(); }
+});
+
+async function refresh() {
+  try {
+    S = await api("/api/state");
+    renderChips(S.config, S.status); renderKpis(S.stats); renderApprovals(S.approvals); renderEscalations(S.escalations);
+    renderEvents(S.events); renderReferrals(S.referrals); renderPeople(S.patients); renderTrace(S.trace); renderPersonas(S.patients);
+    renderStudies(S.studies, S.build);
+    if (!current.patientId) { const p = S.patients.find((x) => x.handle === current.handle); if (p) current.patientId = p.id; }
+  } catch (e) { $("chips").innerHTML = `<span class="chip bad">Server unreachable</span>`; }
+}
+refresh().then(loadChat);
+setInterval(refresh, 2000);
+setInterval(loadChat, 1500);
+</script>
+</body>
+</html>
